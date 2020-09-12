@@ -1,2 +1,9 @@
 # code editors
 .vscode
+
+# file for testing code in files
+testing.py
+
+# python caching files
+__pycache__
+
