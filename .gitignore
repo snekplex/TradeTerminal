@@ -9,3 +9,6 @@ __pycache__
 
 # app database
 *.db
+
+# local working notes
+notes.txt
