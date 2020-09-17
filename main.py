@@ -1,5 +1,6 @@
 from pyfiglet import Figlet
 from terminal.app import TradeTermial
+from database.connect import session
 
 if __name__ == '__main__':
     f = Figlet(font='slant')
