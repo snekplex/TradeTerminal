@@ -7,3 +7,5 @@ testing.py
 # python caching files
 __pycache__
 
+# app database
+*.db
