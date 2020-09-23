@@ -2,6 +2,7 @@ import uuid
 from cmd import Cmd
 from data.yahoo import get_ticker_current_price
 from database.account import Account
+from database.user import User
 from database.connect import session
 
 class TradeTermial(Cmd):
@@ -11,7 +12,30 @@ class TradeTermial(Cmd):
     def __init__(self, completekey, stdin, stdout):
         super().__init__(completekey, stdin, stdout)
 
+        self.user = None
         self.current_account = None
+
+    def do_login(self):
+        try:
+            logged_in = False
+            while not logged_in:
+                username = input('Enter username: ')
+                password = input('Enter password: ')
+
+                user = session.query(User).filter_by(username=username).first()
+                if user:
+                    password_match = user.verify_password(password)
+                    if password_match:
+                        self.user = user.serialize
+                        print('Logged in as {}'.format(user.username))
+                else:
+                    print('User with username {} not found. Please try agin.'.format(username))
+
+
+    
+        except ValueError:
+            print('Please enter valid command and/or necessary params')
+            return
 
     def do_account(self, args) -> None:
         try:
