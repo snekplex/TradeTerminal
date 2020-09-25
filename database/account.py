@@ -10,6 +10,7 @@ class Account(Base):
     uuid =  Column(String(), unique=True, nullable=False)
     name = Column(String(32), unique=True, nullable=False)
     balance =  Column(Float(), default=100000.00, nullable=False)
+    # user - Relationship from User
 
     def __repr__(self):
         return '<Account: id={} | name={} />'.format(self.id, self.name)
