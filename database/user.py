@@ -21,6 +21,7 @@ class User(Base):
     @property
     def serialize(self):
         return {
+            'id': self.id,
             'username': self.username
         }
 
