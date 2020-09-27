@@ -1,5 +1,6 @@
 import uuid
 from cmd import Cmd
+from getpass import getpass
 from data.yahoo import get_ticker_current_price
 from database.account import Account
 from database.user import User
@@ -7,40 +8,132 @@ from database.connect import session
 
 class TradeTermial(Cmd):
 
-    prompt = '> '
-
     def __init__(self, completekey, stdin, stdout):
         super().__init__(completekey, stdin, stdout)
 
+        # Overridng inherited self.prompt variable
+        self.prompt = '> '
+        
         self.user = None
         self.current_account = None
 
-    def do_login(self):
+    # Creates new users for the terminal
+    def do_newuser(self, args) -> None:
+
+        def create_user_loop() -> bool:
+            username = input('Enter username: ')
+            if username.strip() == 'exit':
+                return False
+            
+            user_exists = session.query(User).filter_by(username=username).first()
+            
+            if user_exists:
+                print('Username => {} taken. Please select another.'.format(username))
+                create_user_loop()
+            
+            password = getpass('Enter password: ')
+            password_confirm = getpass('Confirm password: ')
+            
+            if password != password_confirm:
+                print('Passwords did not match. Restarting newuser process')
+                create_user_loop()
+
+            user = User(uuid=str(uuid.uuid4()), username=username, password=password)
+            session.add(user)
+            session.commit()
+            
+            print('User {} created'.format(username))
+            
+            self.user = user.serialize
+            self.prompt = '{} > '.format(user.username)
+
+            return True
+
         try:
-            logged_in = False
-            while not logged_in:
-                username = input('Enter username: ')
-                password = input('Enter password: ')
-
-                user = session.query(User).filter_by(username=username).first()
-                if user:
-                    password_match = user.verify_password(password)
-                    if password_match:
-                        self.user = user.serialize
-                        print('Logged in as {}'.format(user.username))
-                else:
-                    print('User with username {} not found. Please try agin.'.format(username))
-
-
-    
+            created_user = False
+            print('Creating new user')
+            while not created_user:
+                created = create_user_loop()
+                if created:
+                    created_user = True
+                    break
+                if created == False:
+                    return
+                
         except ValueError:
             print('Please enter valid command and/or necessary params')
             return
 
+    # Logs in existing user
+    def do_login(self, args):
+
+        def login_loop() -> bool:
+            username = input('Enter username: ')
+            
+            if username.strip() == 'exit':
+                return False
+            
+            user = session.query(User).filter_by(username=username).first()
+            
+            if user:
+                password = getpass('Enter password: ')
+                password_match = user.verify_password(password)
+                if password_match:
+                    self.user = user.serialize
+                    print('Logged in as {}'.format(user.username))
+                    self.prompt = '{} > '.format(user.username)
+                else:
+                    print('Password failed. Retry login.')
+                    login_loop()
+            else:
+                print('User with username, {} not found. Please try agin.'.format(username))
+                login_loop()
+
+        try:
+            logged_in_user = False
+            while not logged_in_user:
+                logged_in = login_loop()
+
+                if logged_in:
+                    logged_in_user = True
+                    break
+                if logged_in_user == False:
+                    return
+
+        except ValueError:
+            print('Please enter valid command and/or necessary params')
+            return
+
+    # Logs out currently logged in user
+    def do_logout(self, args) -> None:
+        try:
+            print('Logging out')
+            self.user = None
+            self.prompt = '> '
+        except ValueError:
+            print('Please enter valid command and/or necessary params')
+            return
+
+    
+    # Used to manage and create accounts
     def do_account(self, args) -> None:
         try:
-            command, param = args.rsplit(' ', 1)
-            if command.lower() == 'switch':
+
+            command = args
+            
+            if not self.user:
+                print('Please login to a user to connect account to')
+                return
+            
+            if command.lower() == 'create':
+                account_name = input('Enter new account name: ')
+                new_account = Account(uuid=str(uuid.uuid4()), name=account_name, user_id=self.user['id'])
+                session.add(new_account)
+                session.commit()
+                self.current_account = new_account.serialize
+                print('Account {} created'.format(account_name))
+
+            elif command.lower() == 'switch':
                 account_name = input('Enter account name: ')
                 account = session.query(Account).filter_by(name=account_name).first()
                 if not account:
@@ -49,22 +142,14 @@ class TradeTermial(Cmd):
                 
                 self.current_account = account.serialize
                 print('Account switched to => {}'.format(self.current_account['name']))
+
+            elif command.lower() == 'showall':
+                accounts = session.query(Account).filter_by(user_id=self.user['id']).all()
+                print(accounts)
+            
         except ValueError:
             print('Please enter valid command and/or necessary params')
             return
-
-    def do_create(self, args) -> None:
-        try:
-            command, param = args.rsplit(' ', 1)
-                
-            if command.lower() == 'account':
-                new_account = Account(uuid=str(uuid.uuid4()), name=param)
-                session.add(new_account)
-                session.commit()
-                print('Account {} created'.format(param))
-
-        except ValueError:
-            print('Please enter valid command and/or necessary params')
 
 
     # Prints the current price of the inputted ticker
@@ -83,8 +168,10 @@ class TradeTermial(Cmd):
     def do_help(self, command: str) -> None:
         commands = {
             'exit': 'Exits the terminal and closes the application',
-            'account': 'Used to manage user accounts',
-            'create': 'Used to create accounts',
+            'newuser': 'Creates a new user',
+            'login': 'Login as an existing user',
+            'logout': 'When logged in, logs out user',
+            'account': 'Used to create and manage user accounts',
             'price': 'Displays the current price of a ticker'
         }
 
