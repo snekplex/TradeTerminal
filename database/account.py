@@ -9,7 +9,7 @@ class Account(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer(), ForeignKey('user.id', ondelete='CASCADE'))
     uuid =  Column(String(), unique=True, nullable=False)
-    name = Column(String(32), unique=True, nullable=False)
+    name = Column(String(32), unique=False, nullable=False)
     balance =  Column(Float(), default=100000.00, nullable=False)
     # user - Relationship from User
 
