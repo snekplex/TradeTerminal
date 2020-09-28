@@ -14,6 +14,7 @@ class User(Base):
     password_hash = Column(String())
     account_ids = Column(Integer, ForeignKey('account.id', ondelete='CASCADE'))
     accounts = relationship('Account', cascade='all,delete', backref='user', foreign_keys=[account_ids])
+    active_account_id = Column(Integer(), ForeignKey('account.id', ondelete='CASCADE'))
 
     def __repr__(self):
         return '<User: id={} | name={} />'.format(self.id, self.name)
@@ -22,7 +23,8 @@ class User(Base):
     def serialize(self):
         return {
             'id': self.id,
-            'username': self.username
+            'username': self.username,
+            'active_account_id': self.active_account_id
         }
 
     @property
