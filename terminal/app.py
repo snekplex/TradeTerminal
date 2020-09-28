@@ -191,17 +191,29 @@ class TradeTermial(Cmd):
     # Used to find all available commands and their functions
     def do_help(self, command: str) -> None:
         commands = {
-            'exit': 'Exits the terminal and closes the application',
-            'newuser': 'Creates a new user',
-            'login': 'Login as an existing user',
-            'logout': 'When logged in, logs out user',
-            'account': 'Used to create and manage user accounts',
-            'price': 'Displays the current price of a ticker'
+            'exit': {
+                'description': 'Exits the terminal and closes the application'
+            },
+            'newuser': {
+                'description': 'Creates a new user'
+            },
+            'login': {
+                'description': 'Login as an existing user'
+            },
+            'logout': {
+                'description': 'When logged in, logs out user'
+            },
+            'account': {
+                'description': 'Used to create and manage user accounts'
+            },
+            'price': {
+                'description': 'Displays the current price of a ticker'
+            }
         }
 
         if not command:
             for key, val in commands.items():
-                print('{} : {}'.format(key, val))
+                print('\t{} : {}'.format(key, val['description']))
 
         if command.lower() in commands:
             print('{} : {}'.format(command, commands[command]))
