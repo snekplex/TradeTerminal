@@ -1,4 +1,5 @@
 import uuid
+import sqlalchemy
 from cmd import Cmd
 from getpass import getpass
 from data.yahoo import get_ticker_current_price
@@ -42,10 +43,21 @@ class TradeTermial(Cmd):
             session.add(user)
             session.commit()
             
-            print('User {} created'.format(username))
             
+            account = Account(uuid=str(uuid.uuid4()), name='default', user_id=user.id)
+            session.add(account)
+            session.commit()
+
+            user.active_account_id = account.id
+            session.commit()
+            
+
+            print('User {} created'.format(username))
+
             self.user = user.serialize
-            self.prompt = '{} > '.format(user.username)
+            self.current_account = account.serialize
+
+            self.prompt = '{}@{} > '.format(user.username, account.name)
 
             return True
 
@@ -80,8 +92,10 @@ class TradeTermial(Cmd):
                 password_match = user.verify_password(password)
                 if password_match:
                     self.user = user.serialize
+                    active_account = session.query(Account).filter_by(user_id=user.active_account_id).first()
+                    self.current_account = active_account.serialize
                     print('Logged in as {}'.format(user.username))
-                    self.prompt = '{} > '.format(user.username)
+                    self.prompt = '{}@{} > '.format(user.username, active_account.name)
                 else:
                     print('Password failed. Retry login.')
                     login_loop()
@@ -130,8 +144,10 @@ class TradeTermial(Cmd):
                 new_account = Account(uuid=str(uuid.uuid4()), name=account_name, user_id=self.user['id'])
                 session.add(new_account)
                 session.commit()
+                
                 self.current_account = new_account.serialize
                 print('Account {} created'.format(account_name))
+                self.prompt = '{}@{} > '.format(self.user['username'], self.current_account['name'])
 
             elif command.lower() == 'switch':
                 account_name = input('Enter account name: ')
@@ -140,12 +156,20 @@ class TradeTermial(Cmd):
                     print('Account not found. Please try another account.')
                     return
                 
+                user = session.query(User).filter_by(id=self.user['id']).first()
+                user.active_account_id = account.id
+                self.user = user
                 self.current_account = account.serialize
+                
                 print('Account switched to => {}'.format(self.current_account['name']))
+                self.prompt = '{}@{} > '.format(self.user['username'], self.current_account['name'])
 
             elif command.lower() == 'showall':
                 accounts = session.query(Account).filter_by(user_id=self.user['id']).all()
                 print(accounts)
+            
+            elif command.lower() == 'current':
+                print(self.current_account)
             
         except ValueError:
             print('Please enter valid command and/or necessary params')
@@ -181,6 +205,7 @@ class TradeTermial(Cmd):
 
         if command.lower() in commands:
             print('{} : {}'.format(command, commands[command]))
+        
 
 
     def do_exit(self, args) -> None:
