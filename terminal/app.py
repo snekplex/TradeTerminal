@@ -5,6 +5,7 @@ from getpass import getpass
 from data.yahoo import get_ticker_current_price
 from database.account import Account
 from database.user import User
+from database.position import Position
 from database.connect import session
 
 class TradeTermial(Cmd):
@@ -151,7 +152,7 @@ class TradeTermial(Cmd):
 
             elif command.lower() == 'switch':
                 account_name = input('Enter account name: ')
-                account = session.query(Account).filter_by(name=account_name).first()
+                account = session.query(Account).filter_by(name=account_name, user_id=self.user['id']).first()
                 if not account:
                     print('Account not found. Please try another account.')
                     return
@@ -170,15 +171,37 @@ class TradeTermial(Cmd):
             
             elif command.lower() == 'current':
                 print(self.current_account)
+
+            else:
+                print('Please enter a valid command input.')
             
         except ValueError:
             print('Please enter valid command and/or necessary params')
             return
 
+    def do_positions(self, command: str) -> None:
+        try:
+            if command.strip() == 'current':
+                print('========== {} =========='.format(self.current_account['name']))
+                current_acct_positions = session.query(Position).filter_by(account_id=self.current_account['id']).all()
+                print(current_acct_positions)
+            
+            else:
+                print('Please enter a valid command input.')
+            
+
+        except ValueError:
+            print('Please enter valid command and/or necessary params')
+            return
 
     # Prints the current price of the inputted ticker
     def do_price(self, ticker: str) -> None:
         price = None
+
+        if ticker == '' or ticker == None:
+            print('Please provide a valid ticker')
+            return
+
         try:
             price = get_ticker_current_price(ticker)
         except AssertionError:
@@ -187,6 +210,60 @@ class TradeTermial(Cmd):
     
         if price:
             print('{} => ${}'.format(ticker.upper(), price))
+
+    # Used to buy stock and create positions
+    def do_buy(self, args) -> None:
+        try:
+            ticker = input('Enter ticker: ').strip()
+            current_price = get_ticker_current_price(ticker)
+            shares = input('Enter how many shares at ${} per share: '.format(current_price))
+            transaction_total = current_price * int(shares)
+            
+            order = {'ticker': ticker, 'shares': shares, 'total': transaction_total}
+            if self.current_account['balance'] < transaction_total:
+                print('Insufficent funds in acccount for order.')
+                print('Order: ', order)
+                return
+            
+            if self.current_account['balance'] >= transaction_total:
+                print('Current order => ', order)
+                confirm_order = input(r'Confirm order(y/n): ').strip().lower()
+                if confirm_order == 'y':
+                    current_account = session.query(Account).filter_by(name=self.current_account['name'],
+                                                                       user_id=self.user['id']).first()
+                    allowed_trade = current_account.remove_from_balance(transaction_total)
+                    if not allowed_trade:
+                        print('Insufficent funds in acccount for order.')
+                        print('Order: ', order)
+                        return
+
+                    new_balance = float('{:2f}'.format(current_account.balance - transaction_total))
+                    current_account.balance = new_balance
+
+                    new_position = Position(account_id=self.current_account['id'],
+                                            ticker=ticker, shares=int(shares))
+                    
+                    session.add(new_position)
+                    session.commit()
+
+                    self.current_account = current_account.serialize
+                    print('Order confirmed. Stock bought.')
+                    print('New account balance => ${}'.format(new_balance))
+
+                elif confirm_order == 'n':
+                    print('Order cancelled. Returning to terminal.')
+                else:
+                    print('Invalid input. Cancelling order and returning to terminal.')
+                    return
+
+
+        except AssertionError:
+            # Handle if ticker is not found or does not exist
+            print('Ticker {} not found'.format(ticker))
+
+        except ValueError:
+            print('Please enter valid command and/or necessary params')
+            return
 
     # Used to find all available commands and their functions
     def do_help(self, command: str) -> None:
@@ -206,8 +283,14 @@ class TradeTermial(Cmd):
             'account': {
                 'description': 'Used to create and manage user accounts'
             },
+            'positions': {
+                'description': 'Displays the current positions in an account'
+            },
             'price': {
                 'description': 'Displays the current price of a ticker'
+            },
+            'buy': {
+                'description': 'Used to buy and create a position for a stock'
             }
         }
 
