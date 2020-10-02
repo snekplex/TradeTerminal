@@ -15,7 +15,7 @@ class Account(Base):
     name = Column(String(32), unique=False, nullable=False)
     balance =  Column(Float(), default=100000.00, nullable=False)
     position_ids = Column(Integer, ForeignKey('position.id', ondelete='CASCADE'))
-    positions = relationship('Position', cascade='all,delete', backref='account', foreign_keys=[])
+    positions = relationship('Position', cascade='all,delete', backref='account', foreign_keys=[position_ids])
     # user - Relationship from User
 
     def __repr__(self):
