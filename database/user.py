@@ -10,6 +10,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True)
     uuid =  Column(String(), unique=True, nullable=False)
+    created = Column(DateTime, nullable=False, default=datetime.datetime.utcnow())
     username = Column(String(32), unique=True, nullable=False)
     password_hash = Column(String())
     account_ids = Column(Integer, ForeignKey('account.id', ondelete='CASCADE'))
