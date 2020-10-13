@@ -1,5 +1,4 @@
 from typing import List, Dict
-import yfinance as yf
 from yahoo_fin.stock_info import get_live_price
 
 def get_ticker_current_price(ticker: str) -> float:
