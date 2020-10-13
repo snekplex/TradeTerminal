@@ -1,6 +1,7 @@
 import uuid
 import sqlalchemy
 from cmd import Cmd
+from PyInquirer import prompt, Separator
 from getpass import getpass
 from data.yahoo import get_ticker_current_price
 from database.account import Account
@@ -87,13 +88,13 @@ class TradeTermial(Cmd):
                 return False
             
             user = session.query(User).filter_by(username=username).first()
-            
+
             if user:
                 password = getpass('Enter password: ')
                 password_match = user.verify_password(password)
                 if password_match:
                     self.user = user.serialize
-                    active_account = session.query(Account).filter_by(user_id=user.active_account_id).first()
+                    active_account = session.query(Account).filter_by(user_id=user.id, id=user.active_account_id).first()
                     self.current_account = active_account.serialize
                     print('Logged in as {}'.format(user.username))
                     self.prompt = '{}@{} > '.format(user.username, active_account.name)
@@ -122,8 +123,14 @@ class TradeTermial(Cmd):
     # Logs out currently logged in user
     def do_logout(self, args) -> None:
         try:
+
+            if not self.user:
+                print('No user logged in.')
+                return
+
             print('Logging out')
             self.user = None
+            self.current_account = None
             self.prompt = '> '
         except ValueError:
             print('Please enter valid command and/or necessary params')
@@ -145,7 +152,12 @@ class TradeTermial(Cmd):
                 new_account = Account(uuid=str(uuid.uuid4()), name=account_name, user_id=self.user['id'])
                 session.add(new_account)
                 session.commit()
-                
+
+                current_user = session.query(User).filter_by(id=self.user['id']).first()
+                current_user.active_account_id = new_account.id
+                session.commit()
+
+                self.user = current_user.serialize
                 self.current_account = new_account.serialize
                 print('Account {} created'.format(account_name))
                 self.prompt = '{}@{} > '.format(self.user['username'], self.current_account['name'])
@@ -159,9 +171,10 @@ class TradeTermial(Cmd):
                 
                 user = session.query(User).filter_by(id=self.user['id']).first()
                 user.active_account_id = account.id
-                self.user = user
+                self.user = user.serialize
                 self.current_account = account.serialize
-                
+                session.commit()
+
                 print('Account switched to => {}'.format(self.current_account['name']))
                 self.prompt = '{}@{} > '.format(self.user['username'], self.current_account['name'])
 
@@ -179,6 +192,7 @@ class TradeTermial(Cmd):
             print('Please enter valid command and/or necessary params')
             return
 
+    # Used to display info on user positions
     def do_positions(self, command: str) -> None:
         try:
             if command.strip() == 'current':
@@ -196,6 +210,11 @@ class TradeTermial(Cmd):
 
     # Prints the current price of the inputted ticker
     def do_price(self, ticker: str) -> None:
+
+        if not self.user:
+            print('Please login/create a user')
+            return
+
         price = None
 
         if ticker == '' or ticker == None:
@@ -214,10 +233,15 @@ class TradeTermial(Cmd):
     # Used to buy stock and create positions
     def do_buy(self, args) -> None:
         try:
+
+            if not self.user:
+                print('Please login/create a user')
+                return
+
             ticker = input('Enter ticker: ').strip()
             current_price = get_ticker_current_price(ticker)
             shares = input('Enter how many shares at ${} per share: '.format(current_price))
-            transaction_total = current_price * int(shares)
+            transaction_total = float('{:2f}'.format(current_price * int(shares)))
             
             order = {'ticker': ticker, 'shares': shares, 'total': transaction_total}
             if self.current_account['balance'] < transaction_total:
@@ -240,8 +264,8 @@ class TradeTermial(Cmd):
                     new_balance = float('{:2f}'.format(current_account.balance - transaction_total))
                     current_account.balance = new_balance
 
-                    new_position = Position(account_id=self.current_account['id'],
-                                            ticker=ticker, shares=int(shares))
+                    new_position = Position(account_id=self.current_account['id'], buy_price=current_price,
+                                            ticker=ticker.upper(), shares=int(shares))
                     
                     session.add(new_position)
                     session.commit()
@@ -260,6 +284,101 @@ class TradeTermial(Cmd):
         except AssertionError:
             # Handle if ticker is not found or does not exist
             print('Ticker {} not found'.format(ticker))
+
+        except ValueError:
+            print('Please enter valid command and/or necessary params')
+            return
+
+    # Used to sell any currently help positions in account
+    def do_sell(self, args) -> None:
+        try:
+            if not self.user:
+                print('Please login/create a user')
+                return
+
+            open_positions = session.query(Position).filter_by(account_id=self.current_account['id']).all()
+
+            if not open_positions:
+                print('No positions currently in account. To use, buy shares of a stock.')
+                return
+
+            formatted_positions = [position.serialize for position in open_positions]
+            position_dict = {}
+
+            # Potential collision with positions with the same 'name'
+            # Causes bug to select both, thus duplicate number is added.
+            duplicate_num = 0
+            position_tickers = set()
+
+            for position in formatted_positions:
+                if position['ticker'] in position_tickers:
+                    duplicate_num += 1
+                else:
+                    position_tickers.add(position['ticker'])
+
+                # Added duplicate_num is arbitrary. No meaning other then to prevent choice bug.
+                position['name'] = '{} | {} shares held @ ${} |'.format(position['ticker'] + '-' + str(duplicate_num), position['shares'],
+                                                                        position['buy_price'])
+                position_dict[position['ticker'] + '-' + str(duplicate_num)] = position
+
+            formatted_positions.insert(0, Separator('===== Positions ====='))
+            formatted_positions.append({ 'name': 'CANCEL' })
+
+            questions = [
+                {
+                    'type': 'checkbox',
+                    'message': 'Select positons to sell',
+                    'name': 'positions',
+                    'choices': formatted_positions
+                }
+            ]
+
+            choices = prompt(questions)
+
+            choices = [choice.split()[0] for choice in choices['positions']]
+
+            if choices.count('CANCEL') > 0:
+                print('Cancelling sell process')
+                return
+
+            setting_sell_amount = True
+            while setting_sell_amount:
+                
+                try:
+                    for idx in range(len(choices)):
+                        sell_share_amount = int(input('Sell how many of {} shares bought @ ${} of {}: '
+                                                .format(position_dict[choices[idx]]['shares'], position_dict[choices[idx]]['buy_price'],
+                                                        position_dict[choices[idx]]['ticker'])).strip())
+
+                        position_dict[choices[idx]]['sell_share_amount'] = sell_share_amount
+                        if idx == len(choices) - 1:
+                            setting_sell_amount =  False
+                except:
+                    print('Please input valid integer to sell.')
+
+            current_account = session.query(Account).filter_by(id=self.current_account['id']).first()
+
+            # Be carful of potential request limit/denials due to requesting latest price
+            for db_position in open_positions:
+                for choice in choices:
+                    if position_dict[choice]['id'] == db_position.id and position_dict[choice]['sell_share_amount'] > 0:
+                        shares_left = db_position.shares - position_dict[choice]['sell_share_amount']
+                        if shares_left < 0:
+                            print('Unable to sell more shares than owned')
+                        else:
+                            current_price = get_ticker_current_price(position_dict[choice]['ticker'])
+                            gain = (db_position.buy_price * db_position.shares) + (current_price * db_position.shares)
+                            current_account.balance = float('{:2f}'.format(current_account.balance + gain))
+                            if shares_left >= 1:
+                                db_position.shares = shares_left
+                            elif shares_left == 0:
+                                session.delete(db_position)
+            
+            self.current_account = current_account.serialize
+            session.commit()
+
+            print('New account balance => ${}'.format(self.current_account['balance']))
+            return
 
         except ValueError:
             print('Please enter valid command and/or necessary params')
@@ -291,6 +410,9 @@ class TradeTermial(Cmd):
             },
             'buy': {
                 'description': 'Used to buy and create a position for a stock'
+            },
+            'sell': {
+                'description': 'Used to sell current positions'
             }
         }
 
